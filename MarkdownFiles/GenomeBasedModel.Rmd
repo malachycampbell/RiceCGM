@@ -1,0 +1,146 @@
+---
+title: "Genome Based Model"
+author: "Malachy Campbell"
+date: "2/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Fitting the genome-based model
+For control data
+```{r, echo = T, eval = F}
+library(GenomeBasedModel)
+
+#############
+#Input files#
+#############
+
+Y <- read.table("Inputs/Y.c.txt", header = T, sep = "\t")
+Input <- read.table("Inputs/Input.c.txt", header = T, sep = "\t")
+W <- read.table("Inputs/W.txt", header = T, sep = "\t")
+
+Gomp_WSI <- function(input, freevec, parameter) {
+  #This function should yeild the same results as that from the BMCalculation_cpp routine
+  bm.max = parameter[1]
+  rate = parameter[2]
+  DI = parameter[3]
+  
+  ne = freevec[1] #Number of experiments
+  nt = freevec[2] #Number of time points
+  nent = ne * nt
+  
+  output <- numeric(nent)
+  
+  ne = freevec[1] #Number of experiments
+  nt = freevec[2] #Number of time points
+  nent = ne * nt
+  
+  output <- numeric(nent)
+  
+  for (exper in 1:ne){ #run for each experiment
+    #Input is be a matrix of time values for each experiment (t*e x q), a matrix of WSI for each experiment (t*e x q), and a matrix of initial biomass values for each experiment (e x q)
+    #create index for first and last time point
+    TPindx <- c(((nt * exper) - (nt - 1)), nt * exper) #Row 1 - 63; for exp 1: 1-21, exp 2: 22-42; exp 3: 43-63 
+    WSIindx <- c( ((nt * ne) + (exper - 1)*21 ) + 1, ((nt * ne) + (exper)*21 ) ) #row 64 - 126; exp 1: 64-84; exp 2: 85-105; exp 3: 106-126
+    
+    day = input[TPindx[1]:TPindx[2]] #time points
+    wsi = input[WSIindx[1]:WSIindx[2]]
+    #bm0 = input[(nent)*2 + exper] #Extract the PSA value for the first day of imaging; row 127 - 129
+    
+    BM = bm.max * ( exp( -exp(-rate * ((day*0.05) - wsi^DI))))
+    output[TPindx[1]:TPindx[2]] <- BM
+  }
+  output
+}
+
+Y <- as.matrix(rbind(c(1:349), Y))
+W <- as.matrix(rbind(c(1:349), W))
+Input <- as.matrix(Input)
+
+###############################
+###############################
+#####Run model with fold 1#####
+###############################
+###############################
+
+Freevec <- c(3, 21) #Vector with two integers (no of experiments and no of timepoints and no treatments)
+Missing <- 999999
+Np <- 3 #number of parameters
+Referencevalues <- c(607001, 1.768, 1.82) #inital values for the parameters; starting biomass, rate
+Methodcode <- c(2, 2, 2) # EBL is applied. Needs to be specified for each parameter
+
+Result.1 <- GenomeBasedModel(Input = Input, Freevec = Freevec, Y = Y, Missing = Missing, Np = Np, Geno = W, Methodcode = Methodcode, Referencevalues = Referencevalues, Modelfunction = Gomp_WSI, Nloop = 10000, Rhatthr = 1.05, StopN = 5, Lowerlimit = c(1E-16,1E-16,1E-16), Upperlimit = c(1E16,1E16,1E16))
+
+
+saveRDS(Result.1, "Gomp/Control/FullData_control.Rds")
+```
+
+```{r, echo = T, eval = F}
+library(GenomeBasedModel)
+
+#############
+#Input files#
+#############
+
+Y <- read.table("Inputs/Y.d.txt", header = T, sep = "\t")
+Input <- read.table("Inputs/Input.d.txt", header = T, sep = "\t")
+W <- read.table("Inputs/W.txt", header = T, sep = "\t")
+
+Gomp_WSI <- function(input, freevec, parameter) {
+  #This function should yeild the same results as that from the BMCalculation_cpp routine
+  bm.max = parameter[1]
+  rate = parameter[2]
+  DI = parameter[3]
+  
+  ne = freevec[1] #Number of experiments
+  nt = freevec[2] #Number of time points
+  nent = ne * nt
+  
+  output <- numeric(nent)
+  
+  ne = freevec[1] #Number of experiments
+  nt = freevec[2] #Number of time points
+  nent = ne * nt
+  
+  output <- numeric(nent)
+  
+  for (exper in 1:ne){ #run for each experiment
+    #Input is be a matrix of time values for each experiment (t*e x q), a matrix of WSI for each experiment (t*e x q), and a matrix of initial biomass values for each experiment (e x q)
+    #create index for first and last time point
+    TPindx <- c(((nt * exper) - (nt - 1)), nt * exper) #Row 1 - 63; for exp 1: 1-21, exp 2: 22-42; exp 3: 43-63 
+    WSIindx <- c( ((nt * ne) + (exper - 1)*21 ) + 1, ((nt * ne) + (exper)*21 ) ) #row 64 - 126; exp 1: 64-84; exp 2: 85-105; exp 3: 106-126
+    
+    day = input[TPindx[1]:TPindx[2]] #time points
+    wsi = input[WSIindx[1]:WSIindx[2]]
+    #bm0 = input[(nent)*2 + exper] #Extract the PSA value for the first day of imaging; row 127 - 129
+    
+    BM = bm.max * ( exp( -exp(-rate * ((day*0.05) - wsi^DI))))
+    output[TPindx[1]:TPindx[2]] <- BM
+  }
+  output
+}
+
+Y <- as.matrix(rbind(c(1:349), Y))
+W <- as.matrix(rbind(c(1:349), W))
+Input <- as.matrix(Input)
+
+###############################
+###############################
+#####Run model with fold 1#####
+###############################
+###############################
+
+Freevec <- c(3, 21) #Vector with two integers (no of experiments and no of timepoints and no treatments)
+Missing <- 999999
+Np <- 3 #number of parameters
+Referencevalues <- c(12000, 0.15, 0.1) #inital values for the parameters; starting biomass, rate
+Methodcode <- c(2, 2, 2) # EBL is applied. Needs to be specified for each parameter
+
+Result.1 <- GenomeBasedModel(Input = Input, Freevec = Freevec, Y = Y, Missing = Missing, Np = Np, Geno = W, Methodcode = Methodcode, Referencevalues = Referencevalues, Modelfunction = Gomp_WSI, Nloop = 10000, Rhatthr = 1.05, StopN = 5, Lowerlimit = c(1E-16,1E-16,1E-16), Upperlimit = c(1E16,1E16,1E16))
+
+
+saveRDS(Result.1, "Gomp/Drought/FullData_drought.Rds")
+```

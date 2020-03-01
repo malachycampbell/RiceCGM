@@ -1,0 +1,245 @@
+---
+title: "Correlation between model parameters, TOI, and traits"
+author: "Malachy Campbell"
+date: "2/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+pheno.c <- read.csv("phenotypes/pheno.c.csv")
+pheno.c$WSI <- (pheno.c$Per.FC - 10) / (100 - 10) 
+
+pheno.d <- read.csv("phenotypes/pheno.d.csv")
+pheno.d$WSI <- (pheno.d$Per.FC - 10) / (100 - 10)
+
+pheno <- rbind(pheno.c, pheno.d)
+rm(pheno.c)
+rm(pheno.d)
+
+pheno$dailyPAR <- NULL
+pheno$dLAI <- NULL
+pheno$Date <- NULL
+
+pheno <- melt(pheno, id.vars = c("Exp","DayOfImaging","Replicate","Watering.Regime", "NSFTV.ID"))
+pheno <- dcast(pheno, NSFTV.ID + Exp + DayOfImaging + Replicate ~ Watering.Regime + variable)
+pheno$PSArat <- pheno$`Low water_Projected.Shoot.Area`/pheno$Control_Projected.Shoot.Area
+pheno$WUrat <- pheno$`Low water_WaterUse`/pheno$Control_WaterUse
+
+colnames(pheno) <- sub("Low water", "Drought", colnames(pheno))
+
+pheno <- ddply(pheno, .(Exp, DayOfImaging, NSFTV.ID), summarise, 
+               PSA.C = mean(Control_Projected.Shoot.Area, na.rm = T), 
+               WSI.C = mean(Control_WSI, na.rm = T), 
+               WU.C = mean(Control_WaterUse, na.rm = T),
+               PSA.D = mean(Drought_Projected.Shoot.Area, na.rm = T), 
+               WSI.D = mean(Drought_WSI, na.rm = T), 
+               WU.D = mean(Drought_WaterUse, na.rm = T),
+               PSA.rat = mean(PSArat, na.rm = T),
+               WUrat = mean(WUrat, na.rm = T))
+
+pheno <- pheno[pheno$DayOfImaging < 21 ,]
+pheno <- pheno[!is.na(pheno$Exp) ,]
+
+#Drop lines without observations in all experiments
+geno.cnt <- table(pheno$NSFTV.ID)
+geno.cnt <- geno.cnt[geno.cnt == 63] #371
+
+pheno <- pheno[pheno$NSFTV.ID %in% names(geno.cnt) ,]
+length(unique(pheno$NSFTV.ID)) #349
+
+#order by NSFTV.ID, experiment, and Day of imaging
+pheno <- pheno[order(pheno$NSFTV.ID, pheno$Exp, pheno$DayOfImaging) ,]
+
+write.csv(pheno, "SupplementalFiles/FileS1.csv", row.names=F)
+```
+
+Load CGM results.
+```{r}
+GompRes_C <- readRDS("Gomp/Control/FullData_control.Rds")
+GompRes_D <- readRDS("Gomp/Drought/FullData_drought.Rds")
+
+GompRes <- data.frame(NSFTV.ID = unique(pheno$NSFTV.ID),
+                      BMmax_C = GompRes_C$Final$GWRfitting[1,], 
+                      R_C = GompRes_C$Final$GWRfitting[2,], 
+                      DI_C = GompRes_C$Final$GWRfitting[3,],
+                      BMmax_D = GompRes_D$Final$GWRfitting[1,], 
+                      R_D = GompRes_D$Final$GWRfitting[2,], 
+                      DI_D = GompRes_D$Final$GWRfitting[3,])
+
+write.csv(GompRes, "SupplementalFiles/FileS2.csv", row.names=F)
+```
+
+For three day windows subset pheno, merge with Gomp res and take the correlation.
+```{r}
+BMmax_C.cor <- NULL
+BMmax_D.cor <- NULL
+R_C.cor <- NULL
+R_D.cor <- NULL
+DI_C.cor <- NULL
+DI_D.cor <- NULL
+
+BMmax_C.P <- NULL
+BMmax_D.P <- NULL
+R_C.P <- NULL
+R_D.P <- NULL
+DI_C.P <- NULL
+DI_D.P <- NULL
+
+pheno$WUrat[is.infinite(pheno$WUrat)] <- NA
+
+for (i in 1:18){
+  Day.start <- i
+  Day.end <- Day.start + 2
+
+  tmp.pheno <- pheno[pheno$DayOfImaging >= Day.start & pheno$DayOfImaging <= Day.end ,]
+  
+  tmp.pheno <- merge(tmp.pheno, GompRes, by = "NSFTV.ID")
+  
+  BMmax_C.cor <- rbind(BMmax_C.cor, rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[1]][9,1:8])
+  R_C.cor <- rbind(R_C.cor, rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[1]][10,1:8])
+  DI_C.cor <- rbind(DI_C.cor, rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[1]][11,1:8])
+  BMmax_D.cor <- rbind(BMmax_D.cor, rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[1]][12,1:8])
+  R_D.cor <- rbind(R_D.cor, rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[1]][13,1:8])
+  DI_D.cor <- rbind(DI_D.cor, rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[1]][14,1:8])
+  
+  BMmax_C.P <- rbind(BMmax_C.P, 
+                     rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[3]][9,1:8])
+  R_C.P <- rbind(R_C.P, 
+                 rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[3]][10,1:8])
+  DI_C.P <- rbind(DI_C.P, 
+                  rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[3]][11,1:8])
+  BMmax_D.P <- rbind(BMmax_D.P, 
+                     rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[3]][12,1:8])
+  R_D.P <- rbind(R_D.P, 
+                 rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[3]][13,1:8])
+  DI_D.P <- rbind(DI_D.P,
+                  rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[3]][14,1:8])
+}
+```
+
+Solve for inflection point in drought.
+```{r}
+fulldata <- merge(pheno, GompRes, by = "NSFTV.ID")
+fulldata$StdTime <- fulldata$DayOfImaging*0.05
+fulldata$inflectionPt_D <- fulldata$WSI.D^fulldata$DI_D
+fulldata$inflectionPt_C <- fulldata$WSI.C^fulldata$DI_C
+
+#Find the day where difference is positive for drought
+Res.D <- NULL
+for (Exp in 1:3){
+  tmp <- fulldata[fulldata$Exp %in% paste0("E", Exp) ,]
+  InfDay <- NULL
+  for(Acc in 1:349){
+    tmp.tmp <- tmp[tmp$NSFTV.ID %in% unique(tmp$NSFTV.ID)[Acc] ,]
+    tmp.tmp <- tmp.tmp[order(tmp.tmp$DayOfImaging) ,]
+    foo <- tmp.tmp$StdTime - tmp.tmp$inflectionPt_D
+    InfDay <- c(InfDay, min(which(foo > 0)) - 1)
+  }
+  Res.D <- rbind(Res.D, data.frame(Exp = paste0("E", Exp), NSFTV.ID = unique(tmp$NSFTV.ID), DayOfInf_D = InfDay))
+}
+
+#Find the day where difference is positive for control
+Res.C <- NULL
+for (Exp in 1:3){
+  tmp <- fulldata[fulldata$Exp %in% paste0("E", Exp) ,]
+  InfDay <- NULL
+  for(Acc in 1:349){
+    tmp.tmp <- tmp[tmp$NSFTV.ID %in% unique(tmp$NSFTV.ID)[Acc] ,]
+    tmp.tmp <- tmp.tmp[order(tmp.tmp$DayOfImaging) ,]
+    foo <- tmp.tmp$StdTime - tmp.tmp$inflectionPt_C
+    InfDay <- c(InfDay, min(which(foo > 0)) - 1)
+  }
+  Res.C <- rbind(Res.C, data.frame(Exp = paste0("E", Exp), NSFTV.ID = unique(tmp$NSFTV.ID), DayOfInf_C = InfDay))
+}
+
+Res <- cbind(Res.C, Res.D$DayOfInf_D)
+
+pheno.DOI <- merge(pheno, Res, by = c("Exp", "NSFTV.ID"))
+
+DOI_C.cor <- NULL
+DOI_D.cor <- NULL
+
+DOI_C.P <- NULL
+DOI_D.P <- NULL
+
+pheno$WUrat[is.infinite(pheno$WUrat)] <- NA
+
+for (i in 1:18){
+  Day.start <- i
+  Day.end <- Day.start + 2
+
+  tmp.pheno <- pheno.DOI[pheno.DOI$DayOfImaging >= Day.start & pheno.DOI$DayOfImaging <= Day.end ,]
+  
+  DOI_C.cor <- rbind(DOI_C.cor, rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[1]][9,1:8])
+  DOI_D.cor <- rbind(DOI_D.cor, rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[1]][10,1:8])
+  
+  DOI_C.P <- rbind(DOI_C.P, 
+                     rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[3]][9,1:8])
+  DOI_D.P <- rbind(DOI_D.P, 
+                 rcorr(as.matrix(tmp.pheno[4:ncol(tmp.pheno)]), type = "spearman")[[3]][10,1:8])
+}
+
+
+saveRDS(file = "Gomp/TOI.data.rds", 
+        list(DOI_C.cor = DOI_C.cor, 
+             DOI_D.cor = DOI_D.cor, 
+             DOI_C.P = DOI_C.P, 
+             DOI_D.P = DOI_D.P, 
+             pheno = pheno, 
+             Res = Res))
+```
+
+Plot results.
+Four panels - two histograms for TOI and sliding window corr results in bottom panels.
+```{r}
+FullRes <- readRDS("GWAS/Gomp/Figs/TOI.data.rds")
+Res <- FullRes$Res
+DOI_C.cor <- FullRes$DOI_C.cor
+DOI_D.cor <- FullRes$DOI_D.cor
+
+library(latex2exp)
+library(wesanderson)
+pdf("Gomp/Figs/TOI_corr.pdf", w = 3.54, h = 6.2, useDingbats = F, pointsize = 10)
+par(mar=c(3,3,2,1.5), mgp=c(1.8,0.5,0))
+nf = layout(rbind(c(1,1), c(2,2), c(3,3)))
+
+hist(Res$DayOfInf_C, xlab = TeX("$TOI$"), main = NULL, col = wes_palette("Moonrise3", n = 2)[1], xlim = c(8, 20))
+
+hist(Res$`Res.D$DayOfInf_D`, xlab = TeX("$TOI$"), main = NULL, col = wes_palette("Moonrise3", n = 2)[2], add = T)
+
+legend("topleft", c("Cont", "Drt"), fill = c(wes_palette("Moonrise3", n = 2)[1], wes_palette("Moonrise3", n = 2)[2]), bty = "n", pt.cex = 1.5, cex = 0.75)
+
+mtext("A", 2,  adj=4, las=1, padj=-10, font=1, cex=0.8)
+
+#Sliding window correlation
+plot(3:20, DOI_C.cor[,1], type = "l", col = "honeydew4", ylab = "r", xlab = "Day of Imaging", ylim = c(-1, 1))
+lines(3:20, DOI_C.cor[,3], lty = 1, col = "honeydew3")
+lines(3:20, DOI_C.cor[,4], lty = 2, col = "honeydew4")
+lines(3:20, DOI_C.cor[,6], lty = 2, col = "honeydew3")
+lines(3:20, DOI_C.cor[,7], lty = 3, col = "honeydew4")
+lines(3:20, DOI_C.cor[,8], lty = 3, col = "honeydew3")
+legend("topleft", c(TeX("$PSA_C$"), TeX("$PSA_D$"), TeX("$PSA_{dr}$"), 
+                    TeX("$WU_C$"), TeX("$WU_D$"), TeX("$WU_{dr}$")), 
+       lty = c(1,2,3,1,2,3), col = c("honeydew4", "honeydew4", "honeydew4", "honeydew3", "honeydew3","honeydew3"), bty = "n", pt.cex = 0.75, cex = 0.75)
+
+mtext("B", 2,  adj=4, las=1, padj=-10, font=1, cex=0.8)
+
+#Sliding window correlation
+plot(3:20, DOI_D.cor[,1], type = "l", col = "honeydew4", ylab = "r", xlab = "Day of Imaging", ylim = c(-1, 1))
+lines(3:20, DOI_D.cor[,3], lty = 1, col = "honeydew3")
+lines(3:20, DOI_D.cor[,4], lty = 2, col = "honeydew4")
+lines(3:20, DOI_D.cor[,6], lty = 2, col = "honeydew3")
+lines(3:20, DOI_D.cor[,7], lty = 3, col = "honeydew4")
+lines(3:20, DOI_D.cor[,8], lty = 3, col = "honeydew3")
+legend("topleft", c(TeX("$PSA_C$"), TeX("$PSA_D$"), TeX("$PSA_{dr}$"), 
+                    TeX("$WU_C$"), TeX("$WU_D$"), TeX("$WU_{dr}$")), 
+       lty = c(1,2,3,1,2,3), col = c("honeydew4", "honeydew4", "honeydew4", "honeydew3", "honeydew3","honeydew3"), bty = "n", pt.cex = 0.75, cex = 0.75)
+
+mtext("C", 2,  adj=4, las=1, padj=-10, font=1, cex=0.8)
+
+dev.off()
+```

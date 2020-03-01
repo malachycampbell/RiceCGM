@@ -1,0 +1,82 @@
+---
+title: "GWAS for time of inflection"
+author: "Malachy Campbell"
+date: "2/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### GWAS for TOI
+
+```{r}
+TOI.data <- readRDS("Gomp/TOI.data.rds")
+TOI.data <- TOI.data$Res
+
+SNPs <- t(read.table("Inputs/W.txt", sep = "\t", header = T))
+Y <- TOI.data$DayOfInf_C
+
+Xincd <- rbind(diag(nrow = 349, ncol = 349), diag(nrow = 349, ncol = 349), diag(nrow = 349, ncol = 349))
+tmp.W <- Xincd %*% SNPs
+
+ETA <- list(list(~factor(Exp), 
+                 data = TOI.data, 
+                 model = "FIXED"),
+            list(X = tmp.W, model = "BL"))
+
+fm <- BGLR(y = Y, ETA = ETA, nIter = 25000, burnIn = 2000, response_type = "ordinal")
+
+
+MAP <- read.table("Inputs/MAP.txt", sep = "\t", header = T)
+
+TOI_C.BL <- data.frame(CHR = MAP$V1, BP = MAP$V4, Beta = abs(fm$ETA[[2]]$b), SNP = MAP$V2)
+
+manhattan.Beta(TOI_C.BL, Title = "BL_C")
+
+write.table(TOI_C.BL, "Gomp/CandGenes/TOI_C.BL_GWASres.txt", sep = "\t", quote = F, col.names = F, row.names = F)
+
+
+
+Y <- TOI.data$`Res.D$DayOfInf_D`
+
+Xincd <- rbind(diag(nrow = 349, ncol = 349), diag(nrow = 349, ncol = 349), diag(nrow = 349, ncol = 349))
+tmp.W <- Xincd %*% SNPs
+
+ETA <- list(list(~factor(Exp), 
+                 data = TOI.data, 
+                 model = "FIXED"),
+            list(X = tmp.W, model = "BL"))
+
+fm <- BGLR(y = Y, ETA = ETA, nIter = 25000, burnIn = 2000, response_type = "ordinal")
+
+
+MAP <- read.table("Inputs/MAP.txt", sep = "\t", header = T)
+
+TOI_D.BL <- data.frame(CHR = MAP$V1, BP = MAP$V4, Beta = abs(fm$ETA[[2]]$b), SNP = MAP$V2)
+
+write.table(TOI_D.BL, "Gomp/CandGenes/TOI_D.BL_GWASres.txt", sep = "\t", quote = F, col.names = F, row.names = F)
+```
+
+
+Manhattan plots
+```{r}
+TOI_C.BL <- read.table("Gomp/CandGenes/TOI_C.BL_GWASres.txt", sep = "\t", header=F)
+TOI_D.BL <- read.table("Gomp/CandGenes/TOI_D.BL_GWASres.txt", sep = "\t", header=F)
+
+colnames(TOI_C.BL) <- c("CHR", "BP", "Beta", "SNP")
+colnames(TOI_D.BL) <- c("CHR", "BP", "Beta", "SNP")
+
+pdf("Gomp/Figs/Manhattan_TOI.pdf", w = 3.55, h = 3.53, useDingbats = F, pointsize = 10)
+par(mar=c(3,3,1.5,1.5), mgp=c(1.8,0.5,0))
+nf = layout(rbind(c(1,1), c(2,2)))
+
+manhattan.Beta(TOI_C.BL, Title = NULL, colors = c("steelblue","steelblue1"), xaxis.cex = 0.65, yaxis.cex = 0.65)
+mtext("A", 2,  adj=5, las=1, padj=-8, font=1, cex=0.8)
+
+manhattan.Beta(TOI_D.BL, Title = NULL, colors = c("steelblue","steelblue1"), xaxis.cex = 0.65, yaxis.cex = 0.65)
+mtext("B", 2,  adj=5, las=1, padj=-8, font=1, cex=0.8)
+
+dev.off()
+```

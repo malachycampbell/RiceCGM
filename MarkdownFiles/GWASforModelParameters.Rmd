@@ -1,0 +1,135 @@
+---
+title: "GWAS for model parameters"
+author: "Malachy Campbell"
+date: "2/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### GWAS for model paramters
+Manhattan plot function
+```{r}
+manhattan.Beta <- function(dataframe, colors = c("gray10", "gray50"), ymax = "max", xaxis.cex = 1, yaxis.cex = 1, limitchromosomes = 1:23, suggestiveline = NULL, genomewideline = NULL, annotate=NULL, Title, ...) {
+  
+  d=dataframe
+  ymax=max(d$Beta)
+  ymin=min(d$Beta)
+  
+  #throws error if you don't have columns named CHR, BP, and P in your data frame.
+  if (!("CHR" %in% names(d) & "BP" %in% names(d) & "Beta" %in% names(d))) stop("Make sure your data frame contains columns CHR, BP, and Beta")
+  
+  # limits chromosomes to plot. (23=x, 24=y, 25=par?, 26=mito?)
+  if (any(limitchromosomes)) d=d[d$CHR %in% limitchromosomes, ]
+  
+  # remove na's, sort by CHR and BP, and keep snps where 0<P<=1
+  d = d[order(d$CHR, d$BP), ]
+  
+  # sets colors based on colors argument.
+  colors <- rep(colors,max(d$CHR))[1:max(d$CHR)]
+  
+  # sets the maximum value on the y axis
+  if (ymax == "max") ymax<-ceiling(max(d$Beta))
+  
+  # creates continuous position markers for x axis for entire chromosome. also creates tick points.
+  d$pos = NA
+  ticks = NULL
+  lastbase = 0
+  numchroms = length(unique(d$CHR))
+  for (i in unique(d$CHR)) {
+    if (i == 1) {
+      d[d$CHR == i, ]$pos = d[d$CHR == i, ]$BP
+    } else {
+      lastbase=lastbase+tail(subset(d,CHR==i-1)$BP, 1)
+      d[d$CHR == i, ]$pos = d[d$CHR == i, ]$BP+lastbase
+    }
+    ticks=c(ticks, d[d$CHR == i, ]$pos[floor(length(d[d$CHR == i, ]$pos)/2)+1])
+  }
+
+  
+  # create the plot
+  # creates a blank plot
+  with(d, plot(pos, Beta, ylim = c(0,ymax), ylab = expression("|" ~ beta ~ "|"), xlab = "Chromosome", xaxt = "n", type = "n", cex = 0.3, yaxt = "n", main = Title, ...))
+  # then make an axis that has chromosome number instead of position
+  axis(1, at = ticks, lab = unique(d$CHR), cex.axis = xaxis.cex)
+  axis(2, cex.axis = yaxis.cex)
+  icol=1
+  for (i in unique(d$CHR)) {
+    with(d[d$CHR==i, ],points(pos, Beta, col=colors[icol], cex=0.3, ...))
+    icol = icol+1
+  }
+  
+  # create a new data frame with rows from the original data frame where SNP is in annotate character vector.
+  # then plot those points over the original graph, but with a larger point size and a different color.
+  if (!is.null(annotate)) {
+    d.annotate=d[which(d$SNP %in% annotate), ]
+    icol=1
+    for (i in unique(d.annotate$CHR)) {
+      with(d.annotate[d.annotate$CHR==i, ], points(pos, Beta, col = "red", cex=0.5, pch = 20, ...))
+      icol = icol+1
+    }
+  }
+  
+  # add threshold lines
+  if (!is.null(suggestiveline)) abline(h=suggestiveline, col="blue")
+  if (!is.null(genomewideline)) abline(h=genomewideline, col="red")
+}
+```
+
+Control
+```{r}
+MAP <- read.table("Inputs/MAP.txt", sep = "\t", header = T)
+
+GompRes_C <- readRDS("Gomp/Control/FullData_control.Rds")
+Beta_BMmax.C <- GompRes_C$Genome[[1]]$Beta
+Beta_Rate.C <- GompRes_C$Genome[[2]]$Beta
+Beta_DI.C <- GompRes_C$Genome[[3]]$Beta
+
+Beta_BMmax.C <- data.frame(CHR = MAP$V1, BP = MAP$V4, Beta = abs(Beta_BMmax.C), SNP = MAP$V2)
+Beta_Rate.C <- data.frame(CHR = MAP$V1, BP = MAP$V4, Beta = abs(Beta_Rate.C), SNP = MAP$V2)
+Beta_DI.C <- data.frame(CHR = MAP$V1, BP = MAP$V4, Beta = abs(Beta_DI.C), SNP = MAP$V2)
+
+GompRes_D <- readRDS("Gomp/Drought/FullData_drought.Rds")
+Beta_BMmax.D <- GompRes_D$Genome[[1]]$Beta
+Beta_Rate.D <- GompRes_D$Genome[[2]]$Beta
+Beta_DI.D <- GompRes_D$Genome[[3]]$Beta
+
+Beta_BMmax.D <- data.frame(CHR = MAP$V1, BP = MAP$V4, Beta = abs(Beta_BMmax.D), SNP = MAP$V2)
+Beta_Rate.D <- data.frame(CHR = MAP$V1, BP = MAP$V4, Beta = abs(Beta_Rate.D), SNP = MAP$V2)
+Beta_DI.D <- data.frame(CHR = MAP$V1, BP = MAP$V4, Beta = abs(Beta_DI.D), SNP = MAP$V2)
+
+write.table(Beta_BMmax.C, "Gomp/Control/GWASres_BMmax.C.txt", sep = "\t", quote = F, col.names = F, row.names = F)
+write.table(Beta_BMmax.D, "Gomp/Drought/GWASres_BMmax.D.txt", sep = "\t", quote = F, col.names = F, row.names = F)
+write.table(Beta_Rate.C, "Gomp/Control/GWASres_rate.C.txt", sep = "\t", quote = F, col.names = F, row.names = F)
+write.table(Beta_Rate.D, "Gomp/Drought/GWASres_rate.D.txt", sep = "\t", quote = F, col.names = F, row.names = F)
+write.table(Beta_DI.C, "Gomp/Control/GWASres_DI.C.txt", sep = "\t", quote = F, col.names = F, row.names = F)
+write.table(Beta_DI.D, "Gomp/Drought/GWASres_DI.D.txt", sep = "\t", quote = F, col.names = F, row.names = F)
+```
+
+```{r}
+pdf("Gomp/Figs/ManhattanModelParams.pdf", w = 7.09, h = 5.3, useDingbats = F, pointsize = 10)
+par(mar=c(3,3,3,1.5), mgp=c(1.8,0.5,0))
+nf = layout(rbind(c(1,4), c(2,5), c(3,6)))
+
+manhattan.Beta(Beta_BMmax.C, Title = TeX("$\\PSA_{max}$"), colors = c("steelblue","steelblue1"), xaxis.cex = 0.65, yaxis.cex = 0.65)
+mtext("A", 2,  adj=4, las=1, padj=-8.5, font=1, cex=0.8)
+
+manhattan.Beta(Beta_Rate.C, Title = TeX("$r$"), colors = c("steelblue","steelblue1"), xaxis.cex = 0.65, yaxis.cex = 0.65)
+mtext("B", 2,  adj=4, las=1, padj=-8.5, font=1, cex=0.8)
+
+manhattan.Beta(Beta_DI.C, Title = TeX("$\\alpha$"), colors = c("steelblue","steelblue1"), xaxis.cex = 0.65, yaxis.cex = 0.65)
+mtext("C", 2,  adj=4, las=1, padj=-8.5, font=1, cex=0.8)
+
+manhattan.Beta(Beta_BMmax.D, Title = TeX("$\\PSA_{max}$"), colors = c("steelblue","steelblue1"), xaxis.cex = 0.65, yaxis.cex = 0.65)
+mtext("D", 2,  adj=4, las=1, padj=-8.5, font=1, cex=0.8)
+
+manhattan.Beta(Beta_Rate.D, Title = TeX("$r$"), colors = c("steelblue","steelblue1"), xaxis.cex = 0.65, yaxis.cex = 0.65)
+mtext("E", 2,  adj=4, las=1, padj=-8.5, font=1, cex=0.8)
+
+manhattan.Beta(Beta_DI.D, Title = TeX("$\\alpha$"), colors = c("steelblue","steelblue1"), xaxis.cex = 0.65, yaxis.cex = 0.65)
+mtext("F", 2,  adj=4, las=1, padj=-8.5, font=1, cex=0.8)
+
+dev.off()
+```

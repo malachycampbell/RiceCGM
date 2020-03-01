@@ -1,0 +1,479 @@
+---
+title: "Assessing model fits - Fig 3"
+author: "Malachy Campbell"
+date: "2/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load results, predict Y and calculate the RMSE.
+```{r, echo = T, eval = F}
+rm(list =ls())
+
+drtGomp <- readRDS("NM_Opt/classicalGomp_NM/Drought_gomp.rds"); dim(drtGomp)
+contGomp <- readRDS(paste0(pathPrefix, "/NM_Opt/classicalGomp_NM/Control_gomp.rds"); dim(contGomp)
+
+drtWSI <- readRDS("NM_Opt/WSIGomp_NM/Drought_gompWSI.rds"); dim(drtWSI)
+contWSI <- readRDS("NM_Opt/WSIGomp_NM/Control_gompWSI.rds"); dim(contWSI)
+```
+
+### Gomp function
+```{r}
+########################
+########################
+#####Define the CGM#####
+########################
+########################
+Gomp_WSI <- function(input, freevec, parameter) {
+  #This function should yeild the same results as that from the BMCalculation_cpp routine
+  bm.max = parameter[1]
+  rate = parameter[2]
+  DI = parameter[3]
+  
+  ne = freevec[1] #Number of experiments
+  nt = freevec[2] #Number of time points
+  nent = ne * nt
+  
+  output <- numeric(nent)
+  
+  ne = freevec[1] #Number of experiments
+  nt = freevec[2] #Number of time points
+  nent = ne * nt
+  
+  output <- numeric(nent)
+  
+  for (exper in 1:ne){ #run for each experiment
+    #Input is be a matrix of time values for each experiment (t*e x q), a matrix of WSI for each experiment (t*e x q), and a matrix of initial biomass values for each experiment (e x q)
+    #create index for first and last time point
+    TPindx <- c(((nt * exper) - (nt - 1)), nt * exper) #Row 1 - 63; for exp 1: 1-21, exp 2: 22-42; exp 3: 43-63 
+    WSIindx <- c( ((nt * ne) + (exper - 1)*21 ) + 1, ((nt * ne) + (exper)*21 ) ) #row 64 - 126; exp 1: 64-84; exp 2: 85-105; exp 3: 106-126
+    
+    day = input[TPindx[1]:TPindx[2]] #time points
+    wsi = input[WSIindx[1]:WSIindx[2]]
+    #bm0 = input[(nent)*2 + exper] #Extract the PSA value for the first day of imaging; row 127 - 129
+    
+    BM = bm.max * ( exp( -exp(-rate * ((day*0.05) - wsi^DI))))
+    output[TPindx[1]:TPindx[2]] <- BM
+  }
+  output
+}
+```
+
+### Compare predicted and observed - Control
+```{r}
+Y <- read.table("Inputs/WSI/Y.c.txt", header = T, sep = "\t")
+Input <- read.table("Inputs/WSI/Input.c.txt", header = T, sep = "\t")
+
+
+#GBM results
+#Get predicted values
+GompRes <- readRDS(paste0(pathPrefix, "GWAS/Gomp/Control/FullData_control.Rds"))
+# GompRes <- readRDS("~/Documents/Dropbox/Work/CGM/GWAS/Gomp/Control/FullData_control.Rds")
+
+BMax <- GompRes$Final$GWRfitting[1,]
+Rate <- GompRes$Final$GWRfitting[2,]
+DI <- GompRes$Final$GWRfitting[3,]
+
+PredYs <- NULL
+for (i in 1:length(BMax)){
+  tmpYs <- Gomp_WSI(input = Input[,i], 
+                  freevec = c(3, 21), 
+                  parameter = c(BMax[i], Rate[i], DI[i]))
+  PredYs <- cbind(PredYs, tmpYs)
+}
+
+PredYs_C <- as.data.frame(PredYs)
+
+
+#Correlation
+CorRes <- NULL
+#get correlation for each time point
+for (ROW in 1:nrow(PredYs)){
+  tmpCor <- cor(t(PredYs_C[ROW,]), t(Y[ROW,]))
+  CorRes <- c(CorRes, tmpCor)
+}
+
+CorRes <- matrix(CorRes, ncol = 21, nrow = 3, byrow = T)
+CorRes.C <- list(apply(CorRes, 2, mean),
+                 apply(CorRes, 2, sd))
+
+#RMSE
+tmp.RMSE.tp <- NULL
+for (ROW in 1:nrow(PredYs)){
+  tmp.RMSE <- sqrt(sum((PredYs[ROW,] - Y[ROW,])^2)/length(PredYs[ROW,]) )/mean(PredYs[ROW,])
+  tmp.RMSE.tp <- c(tmp.RMSE.tp, tmp.RMSE)
+}
+
+RMSERes <- matrix(tmp.RMSE.tp, ncol = 21, nrow = 3, byrow = T)
+RMSERes.C <- list(apply(RMSERes, 2, mean),
+                  apply(RMSERes, 2, sd))
+
+
+#plot(0:20, RMSERes.C)
+#plot(0:20, CorRes.C)
+
+#For each line plot Predicted Ys and observed Ys for each experiment
+# pdf("~/Documents/Dropbox/Work/CGM/GWAS/Gomp/Control/PredvObs_C.pdf", h = 4, w = 6)
+# for (i in 1:ncol(PredYs)){
+#   ymax <- max(Y[,i], PredYs[,i])
+#   
+#   plot(0:20, Y[1:21,i], pch = 19, cex = 0.3, ylim = c(0, ymax), main = paste0("Acc ", i))
+#   points(0:20, Y[22:42,i], pch = 19, cex = 0.3, col = "steelblue1")
+#   points(0:20, Y[43:63,i], pch = 19, cex = 0.3, col = "steelblue")
+#   
+#   lines(0:20, PredYs[1:21,i], lty = 2)
+#   lines(0:20, PredYs[22:42,i], lty = 2, col = "steelblue1")
+#   lines(0:20, PredYs[43:63,i], lty = 2, col = "steelblue")
+# }
+# dev.off()
+```
+
+
+### Compare predicted and observed - Drought
+```{r}
+Y <- read.table(paste0(pathPrefix, "Inputs/WSI/Y.d.txt"), header = T, sep = "\t")
+Input <- read.table(paste0(pathPrefix, "Inputs/WSI/Input.d.txt"), header = T, sep = "\t")
+# Y <- read.table("~/Documents/Dropbox/Work/CGM/Inputs/WSI/Y.d.txt", header = T, sep = "\t")
+# Input <- read.table("~/Documents/Dropbox/Work/CGM/Inputs/WSI/Input.d.txt", header = T, sep = "\t")
+
+
+#GBM results
+#Get predicted values
+GompRes <- readRDS(paste0(pathPrefix, "GWAS/Gomp/Drought/FullData_drought.Rds"))
+# GompRes <- readRDS("~/Documents/Dropbox/Work/CGM/GWAS/Gomp/Drought/FullData_drought.Rds")
+
+BMax <- GompRes$Final$GWRfitting[1,]
+Rate <- GompRes$Final$GWRfitting[2,]
+DI <- GompRes$Final$GWRfitting[3,]
+
+PredYs <- NULL
+for (i in 1:length(BMax)){
+  tmpYs <- Gomp_WSI(input = Input[,i], 
+                  freevec = c(3, 21), 
+                  parameter = c(BMax[i], Rate[i], DI[i]))
+  PredYs <- cbind(PredYs, tmpYs)
+}
+
+PredYs_D <- as.data.frame(PredYs)
+
+
+#Correlation
+CorRes <- NULL
+#get correlation for each time point
+for (ROW in 1:nrow(PredYs_D)){
+  tmpCor <- cor(t(PredYs_D[ROW,]), t(Y[ROW,]))
+  CorRes <- c(CorRes, tmpCor)
+}
+CorRes <- matrix(CorRes, ncol = 21, nrow = 3, byrow = T)
+CorRes.D <- apply(CorRes, 2, mean)
+
+#RMSE
+tmp.RMSE.tp <- NULL
+for (ROW in 1:nrow(PredYs_D)){
+  tmp.RMSE <- sqrt(sum((PredYs_D[ROW,] - Y[ROW,])^2)/length(PredYs_D[ROW,]) )/mean(PredYs[ROW,])
+  tmp.RMSE.tp <- c(tmp.RMSE.tp, tmp.RMSE)
+}
+
+RMSERes <- matrix(tmp.RMSE.tp, ncol = 21, nrow = 3, byrow = T)
+RMSERes.D <- apply(RMSERes, 2, mean)
+
+#plot(0:20, RMSERes.C)
+#plot(0:20, CorRes.C)
+
+#For each line plot Predicted Ys and observed Ys for each experiment
+# pdf("~/Documents/Dropbox/Work/CGM/GWAS/Gomp/Drought/PredvObs_D.pdf", h = 4, w = 6)
+# for (i in 1:ncol(PredYs)){
+#   ymax <- max(Y[,i], PredYs[,i])
+#   
+#   plot(0:20, Y[1:21,i], pch = 19, cex = 0.3, ylim = c(0, ymax), main = paste0("Acc ", i))
+#   points(0:20, Y[22:42,i], pch = 19, cex = 0.3, col = "steelblue1")
+#   points(0:20, Y[43:63,i], pch = 19, cex = 0.3, col = "steelblue")
+#   
+#   lines(0:20, PredYs[1:21,i], lty = 2)
+#   lines(0:20, PredYs[22:42,i], lty = 2, col = "steelblue1")
+#   lines(0:20, PredYs[43:63,i], lty = 2, col = "steelblue")
+# }
+# dev.off()
+```
+
+
+### Compare fit - plot
+```{r}
+#pdf(paste0(pathPrefix, "../JxB/Resub2/Fig3_revised.pdf"), w = 7.09, h = 4.7)
+pdf("Gomp/Figs/WSIGomp_fit.pdf", w = 7.09, h = 4.7)
+par(mar=c(3,3,2,1.5), mgp=c(1.8,0.5,0))
+nf = layout(rbind(c(1,2), c(3,4)))
+
+plot(1:21, Y_c[1:21], pch = 19, cex = 0.5, ylim = c(0, max(Y_c)*1.5), ylab = "PSA", xlab = "Day of Imaging")
+ErrorBars(1:21, Y_c[1:21], Y_csd[1:21], 1, "black")
+lines(1:21, 
+      WSIGomp(bm.max = BMmax_C, TIME = 0:20, WSI = WSI_c[,1], rate = Rate_C, DI = DI_C), 
+      col = "black", lty = 2)
+
+points(1:21 + 0.1, Y_c[22:42], pch = 19, cex = 0.5, ylim = c(0, max(Y_c)*1.5), col = "steelblue")
+ErrorBars(1:21 + 0.1, Y_c[22:42], Y_csd[22:42], 1, "steelblue")
+lines(1:21 + 0.1, 
+      WSIGomp(bm.max = BMmax_C, TIME = 0:20, WSI = WSI_c[,2], rate = Rate_C, DI = DI_C), 
+      col = "steelblue", lty = 2)
+
+points(1:21 + 0.2, Y_c[43:63], pch = 19, cex = 0.5, ylim = c(0, max(Y_c)*1.5), col = "steelblue1")
+ErrorBars(1:21 + 0.2, Y_c[43:63], Y_csd[43:63], 1, "steelblue1")
+lines(1:21 + 0.2, 
+      WSIGomp(bm.max = BMmax_C, TIME = 0:20, WSI = WSI_c[,3], rate = Rate_C, DI = DI_C), 
+      col = "steelblue1", lty = 2)
+legend("topleft", c("Exp1", "Exp2", "Exp3"), col = c("black", "steelblue", "steelblue1"), pch = 19, lty = c(2,2,2), bty = "n", cex = 0.7)
+
+mtext("A", 2,  adj=5, las=1, padj=-8, font=1, cex=0.8)
+
+plot(1:21, Y_d[1:21], pch = 19, cex = 0.5, ylim = c(0, max(Y_d)*1.5), ylab = "PSA", xlab = "Day of Imaging")
+ErrorBars(1:21, Y_d[1:21], Y_dsd[1:21], 1, "black")
+lines(1:21, 
+      WSIGomp(bm.max = BMmax_D, TIME = 0:20, WSI = WSI_d[,1], rate = Rate_D, DI = DI_D), 
+      col = "black", lty = 2)
+
+points(1:21 + 0.1, Y_d[22:42], pch = 19, cex = 0.5, ylim = c(0, max(Y_d)*1.5), col = "steelblue")
+ErrorBars(1:21 + 0.1, Y_d[22:42], Y_dsd[22:42], 1, "steelblue")
+lines(1:21 + 0.1, 
+      WSIGomp(bm.max = BMmax_D, TIME = 0:20, WSI = WSI_d[,2], rate = Rate_D, DI = DI_D), 
+      col = "steelblue", lty = 2)
+
+points(1:21 + 0.2, Y_d[43:63], pch = 19, cex = 0.5, ylim = c(0, max(Y_d)*1.5), col = "steelblue1")
+ErrorBars(1:21 + 0.2, Y_d[43:63], Y_dsd[43:63], 1, "steelblue1")
+lines(1:21 + 0.2, 
+      WSIGomp(bm.max = BMmax_D, TIME = 0:20, WSI = WSI_d[,3], rate = Rate_D, DI = DI_D), 
+      col = "steelblue1", lty = 2)
+
+legend("topleft", c("Exp1", "Exp2", "Exp3"), col = c("black", "steelblue", "steelblue1"), pch = 19, lty = c(2,2,2), bty = "n", cex = 0.7)
+
+mtext("B", 2,  adj=5, las=1, padj=-8, font=1, cex=0.8)
+
+
+plot(1:21, CorRes.C[[1]], pch = 19, cex = 0.5, ylim = c(0, 1), ylab = TeX("$r$"), xlab = "Day of Imaging")
+lines(1:21, CorRes.C[[1]], lty = 1, col = "black")
+points(1:21, CorRes.D, pch = 19, col = "grey90", cex = 0.5)
+lines(1:21, CorRes.D, lty = 2, col = "grey90")
+legend("topleft", c("Cont", "Drt"), col = c("black", "grey90"), pch = 19, lty = c(1,2), bty = "n", cex = 0.7)
+
+mtext("C", 2,  adj=5, las=1, padj=-8, font=1, cex=0.8)
+
+plot(1:21, RMSERes.C[[1]], pch = 19, cex = 0.5, ylim = c(0, max(RMSERes.C[[1]], RMSERes.D[[1]])), ylab = "RRMSE", xlab = "Day of Imaging")
+lines(1:21, RMSERes.C[[1]], lty = 1, col = "black")
+points(1:21, RMSERes.D, pch = 19, col = "grey90", cex = 0.5)
+lines(1:21, RMSERes.D, lty = 2, col = "grey90")
+
+legend("topright", c("Cont", "Drt"), col = c("black", "grey90"), pch = 19, lty = c(1,2), bty = "n", cex = 0.7)
+
+mtext("D", 2,  adj=5, las=1, padj=-8, font=1, cex=0.8)
+dev.off()
+```
+
+### What do the model parameters mean?
+"Sensitivity analysis"
+```{r, echo = T, eval = F}
+library(latex2exp)
+
+rm(list = ls())
+
+########################
+########################
+#####Define the CGM#####
+########################
+########################
+Gomp_WSI <- function(input, freevec, parameter) {
+  #This function should yeild the same results as that from the BMCalculation_cpp routine
+  bm.max = parameter[1]
+  rate = parameter[2]
+  DI = parameter[3]
+  
+  ne = freevec[1] #Number of experiments
+  nt = freevec[2] #Number of time points
+  nent = ne * nt
+  
+  output <- numeric(nent)
+  
+  ne = freevec[1] #Number of experiments
+  nt = freevec[2] #Number of time points
+  nent = ne * nt
+  
+  output <- numeric(nent)
+  
+  for (exper in 1:ne){ #run for each experiment
+    #Input is be a matrix of time values for each experiment (t*e x q), a matrix of WSI for each experiment (t*e x q), and a matrix of initial biomass values for each experiment (e x q)
+    #create index for first and last time point
+    TPindx <- c(((nt * exper) - (nt - 1)), nt * exper) #Row 1 - 63; for exp 1: 1-21, exp 2: 22-42; exp 3: 43-63 
+    WSIindx <- c( ((nt * ne) + (exper - 1)*21 ) + 1, ((nt * ne) + (exper)*21 ) ) #row 64 - 126; exp 1: 64-84; exp 2: 85-105; exp 3: 106-126
+    
+    day = input[TPindx[1]:TPindx[2]] #time points
+    wsi = input[WSIindx[1]:WSIindx[2]]
+    #bm0 = input[(nent)*2 + exper] #Extract the PSA value for the first day of imaging; row 127 - 129
+    
+    BM = bm.max * ( exp( -exp(-rate * ((day*0.05) - wsi^DI))))
+    output[TPindx[1]:TPindx[2]] <- BM
+  }
+  output
+}
+
+####
+####
+Input.C <- read.table("/Inputs/WSI/Input.c.txt", header = T, sep = "\t")
+Input.D <- read.table("/Inputs/WSI/Input.d.txt", header = T, sep = "\t")
+
+#convienient place to store the parameters
+
+#GBM results
+#Get predicted values
+GompRes <- readRDS("Gomp/Control/FullData_control.Rds")
+
+#select accession with median Bmax
+medAcc <- which(GompRes$Final$GWRfitting[1,] == median(GompRes$Final$GWRfitting[1,]))
+BMax_tmpC <- GompRes$Final$GWRfitting[1,medAcc]
+Rate_tmpC <- GompRes$Final$GWRfitting[2,medAcc]
+DI_tmpC <- GompRes$Final$GWRfitting[3,medAcc]
+
+GompRes <- readRDS("Gomp/Drought/FullData_drought.Rds")
+
+BMax_tmpD <- GompRes$Final$GWRfitting[1,medAcc]
+Rate_tmpD <- GompRes$Final$GWRfitting[2,medAcc]
+DI_tmpD <- GompRes$Final$GWRfitting[3,medAcc]
+
+tmpYs <- data.frame(Gomp_WSI(input = Input.C[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpC, Rate_tmpC, DI_tmpC)), #original parameters
+                    Gomp_WSI(input = Input.C[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpC*0.8, Rate_tmpC, DI_tmpC)), #decrease Bmax
+                    Gomp_WSI(input = Input.C[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpC*1.2, Rate_tmpC, DI_tmpC)), #increase Bmax
+                    Gomp_WSI(input = Input.C[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpC, Rate_tmpC*0.6, DI_tmpC)), #decrease rate
+                    Gomp_WSI(input = Input.C[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpC, Rate_tmpC*1.4, DI_tmpC)), #increase rate
+                    Gomp_WSI(input = Input.C[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpC, Rate_tmpC, DI_tmpC*0.6)), #decrease DI
+                    Gomp_WSI(input = Input.C[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpC, Rate_tmpC, DI_tmpC*1.4)), #increase DI
+                    Gomp_WSI(input = Input.D[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpD, Rate_tmpD, DI_tmpD)), #original parameters
+                    Gomp_WSI(input = Input.D[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpD*0.8, Rate_tmpD, DI_tmpD)), #decrease Bmax
+                    Gomp_WSI(input = Input.D[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpD*1.2, Rate_tmpD, DI_tmpD)), #increase Bmax
+                    Gomp_WSI(input = Input.D[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpD, Rate_tmpD*0.6, DI_tmpD)), #decrease rate
+                    Gomp_WSI(input = Input.D[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpD, Rate_tmpD*1.4, DI_tmpD)), #increase rate
+                    Gomp_WSI(input = Input.D[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpD, Rate_tmpD, DI_tmpD*0.6)), #decrease DI
+                    Gomp_WSI(input = Input.D[,medAcc],
+                             freevec = c(3, 21), 
+                             parameter = c(BMax_tmpD, Rate_tmpD, DI_tmpD*1.4))) #increase DI
+
+
+
+pdf(paste0(pathPrefix, "Gomp/Figs/WSIGomp_Sens.pdf"), w = 7.09, h = 7.05)
+par(mar=c(3,4.5,2,2), mgp=c(1.8,0.5,0))
+nf = layout(rbind(c(1,4), c(2,5), c(3,6)))
+
+colIndx <- seq(2, 12, 2)
+dayIndx <- 22:42
+for(i in 1:length(colIndx)){
+  if(colIndx[i] < 8){
+    
+    yMax <- max(tmpYs[dayIndx, 1:7])*1.1
+    
+    plot(1:21, tmpYs[dayIndx, 1], pch = 19, cex = 0.5, 
+         ylim = c(0, yMax), ylab = "PSA", xlab = "Day of Imaging", col = "grey60")
+    lines(1:21, tmpYs[dayIndx, 1], col = "grey60")
+    
+    points(1:21, tmpYs[dayIndx, colIndx[i]], pch = 21, cex = 0.5, 
+           ylim = c(0, yMax), ylab = "PSA", xlab = "Day of Imaging", col = "steelblue")
+    lines(1:21, tmpYs[dayIndx, colIndx[i]], col = "steelblue", lty = 2)
+  
+    points(1:21, tmpYs[dayIndx, (colIndx[i]+1)], pch = 20, cex = 0.5, 
+           ylim = c(0, yMax), ylab = "PSA", xlab = "Day of Imaging", col = "steelblue1")
+    lines(1:21, tmpYs[dayIndx, (colIndx[i]+1)], col = "steelblue1", lty = 3)
+  }else{
+    yMax <- max(tmpYs[dayIndx, 8:14])*1.1
+    
+    plot(1:21, tmpYs[dayIndx, 8], pch = 19, cex = 0.5, 
+         ylim = c(0, yMax), ylab = "PSA", xlab = "Day of Imaging", col = "grey60")
+    lines(1:21, tmpYs[dayIndx, 8], col = "grey60")
+    
+    points(1:21, tmpYs[dayIndx, (colIndx[i]+1)], pch = 21, cex = 0.5, 
+           ylim = c(0, yMax), ylab = "PSA", xlab = "Day of Imaging", col = "steelblue")
+    lines(1:21, tmpYs[dayIndx, (colIndx[i]+1)], col = "steelblue", lty = 2)
+  
+    points(1:21, tmpYs[dayIndx, (colIndx[i]+2)], pch = 20, cex = 0.5, 
+           ylim = c(0, yMax), ylab = "PSA", xlab = "Day of Imaging", col = "steelblue1")
+    lines(1:21, tmpYs[dayIndx, (colIndx[i]+2)], col = "steelblue1", lty = 3)
+  }
+  
+  mtext(LETTERS[i], 2,  adj=5, las=1, padj=-9, font=1, cex=0.8)
+  
+  
+  if(i == 1){
+    legend("topleft", pch = c(19, 21, 20), lty = c(1,2,3), 
+         col = c("black", "steelblue", "steelblue1"),
+         legend = c(paste0("PSAmax = ", c(round(BMax_tmpC, 2), 
+                                          round(BMax_tmpC*0.8, 2), 
+                                          round(BMax_tmpC*1.2, 2)))),
+         cex = 0.75, pt.cex = 0.5, bty = "n")
+    }
+  if(i == 2){
+     legend("topleft", pch = c(19, 21, 20), lty = c(1,2,3), 
+         col = c("black", "steelblue", "steelblue1"),
+         legend = c(paste0("r = ", c(round(Rate_tmpC, 2), 
+                                     round(Rate_tmpC*0.4, 2), 
+                                     round(Rate_tmpC*1.6, 2)))),
+         cex = 0.75, pt.cex = 0.5, bty = "n")
+    }
+  if(i == 3){
+     legend("topleft", pch = c(19, 21, 20), lty = c(1,2,3), 
+         col = c("black", "steelblue", "steelblue1"),
+         legend = c(paste0("alpha = ", c(round(DI_tmpC, 2), 
+                                         round(DI_tmpC*0.4, 2), 
+                                         round(DI_tmpC*1.6, 2)))),
+         cex = 0.75, pt.cex = 0.5, bty = "n")
+    }
+  if(i == 4){
+     legend("topleft", pch = c(19, 21, 20), lty = c(1,2,3), 
+         col = c("black", "steelblue", "steelblue1"),
+         legend = c(paste0("PSAmax = ", c(round(BMax_tmpD, 2), 
+                                     round(BMax_tmpD*0.8, 2), 
+                                     round(BMax_tmpD*1.2, 2)))),
+         cex = 0.75, pt.cex = 0.5, bty = "n")
+    }
+  if(i == 5){
+     legend("topleft", pch = c(19, 21, 20), lty = c(1,2,3), 
+         col = c("black", "steelblue", "steelblue1"),
+         legend = c(paste0("r = ", c(round(Rate_tmpD, 2), 
+                                     round(Rate_tmpD*0.6, 2), 
+                                     round(Rate_tmpD*1.4, 2)))),
+         cex = 0.75, pt.cex = 0.5, bty = "n")
+    }
+  if(i == 6){
+     legend("topleft", pch = c(19, 21, 20), lty = c(1,2,3), 
+         col = c("black", "steelblue", "steelblue1"),
+         legend = c(paste0("alpha = ", c(round(DI_tmpD, 2), 
+                                         round(DI_tmpD*0.6, 2), 
+                                         round(DI_tmpD*1.4, 2)))),
+         cex = 0.75, pt.cex = 0.5, bty = "n")
+  }
+}
+
+dev.off()
+```
