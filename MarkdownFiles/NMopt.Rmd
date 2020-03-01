@@ -1,0 +1,606 @@
+---
+title: "NM optimization"
+author: "Malachy Campbell"
+date: "2/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Fit model to population means using Nelder-Mead optimization
+Fitting the WSI Gompertz model to population means.
+```{r}
+NMoptimization <- function(days, wsis, ys, int.bm.max.vec, int.rate.vec, int.di.vec){
+  #Indx is the genotype index; loop over columns of Input
+  #Function to calculate biomass from LAI, PSA and LUE. x contains k and LUE
+  Nexp <- ncol(ys)
+  
+  GompFunct <- function(wsi, day, params) {
+    bm.max = params[1]
+    rate = params[2]
+    DI = params[3]
+    
+    BM = bm.max * ( exp( -exp(-rate * ((day*0.05) - wsi^DI))))
+    output <- BM
+    output
+    }
+  
+  #Optimization function
+  Gomp.op <- function(x){
+    #all inputs are matrices
+    optim.sum <- 0
+    #For each experiment 
+    for(env in 1:Nexp){
+      optim.sum <- optim.sum + sum(abs(ys[,env] - GompFunct(params = x, wsi = wsis[,env], day = days[,env]) ))
+    }
+    optim.sum
+  }
+  
+  fd <- function(bm.max, rate, DI){
+    optim.out <- optim(c(bm.max, rate, DI), Gomp.op, method="L-BFGS-B", lower = c(1E-16,1E-16,1E-16), upper = c(1E16,1E16,1E16))
+    instantframe <- data.frame(
+      INT.bm.max = bm.max,
+      INT.rate = rate,
+      INT.DI = DI,
+      OPT.bm.max = optim.out$par[1],
+      OPT.rate = optim.out$par[2],
+      OPT.DI = optim.out$par[3],
+      OPT.value = optim.out$value,
+      OPT.counts = optim.out$counts[1]
+    )
+    instantframe
+  }  
+  
+  output<-data.frame()
+  for(int.bm.max in int.bm.max.vec){
+    for(int.rate in int.rate.vec){
+      for(int.di in int.di.vec){
+        output <- rbind(output,	fd(bm.max = int.bm.max, rate = int.rate, DI = int.di))
+        }
+      }
+    }
+  
+  return(output[which(output$OPT.value==min(output$OPT.value)),])
+}
+
+# pathPrefix <- "~/Documents/Dropbox/Work/Manuscripts/2019_CGM_GWAS/CGM/"
+# Y_c <- as.matrix(read.table(paste0(pathPrefix, "Inputs/WSI/Y.c.txt"), header = T, sep = "\t"))
+# Input_c <- as.matrix(read.table(paste0(pathPrefix, "Inputs/WSI/Input.c.txt"), header = T, sep = "\t"))
+Y_c <- as.matrix(read.table("Inputs/WSI/Y.c.txt", header = T, sep = "\t"))
+Input_c <- as.matrix(read.table("Inputs/WSI/Input.c.txt", header = T, sep = "\t"))
+
+Y_csd <- apply(Y_c, 1, sd)
+Y_c <- apply(Y_c, 1, mean)
+Input_c <- apply(Input_c, 1, mean)
+
+Ys_c <- matrix(Y_c, ncol = 3, nrow = 21, byrow = F)
+TPs_c <- matrix(Input_c[1:63], ncol = 3, nrow = 21, byrow = F)
+WSI_c <- matrix(Input_c[64:126], ncol = 3, nrow = 21, byrow = F)
+  
+Popmean_C <- NMoptimization(days = TPs_c, wsis = WSI_c, ys = Ys_c, int.bm.max.vec = c(150000, 200000, 370000, 500000), int.rate.vec = c(seq(0.0001, 2, by = 0.1)), int.di.vec = c(seq(0.0001, 5, by = 0.25)))
+
+BMmax_C = 612498.7
+Rate_C = 1.701823 
+DI_C = 1.498785
+
+
+# Y_d <- as.matrix(read.table(paste0(pathPrefix, "Inputs/WSI/Y.d.txt"), header = T, sep = "\t"))
+# Input_d <- as.matrix(read.table(paste0(pathPrefix, "Inputs/WSI/Input.d.txt"), header = T, sep = "\t"))
+Y_d <- as.matrix(read.table("Inputs/WSI/Y.d.txt", header = T, sep = "\t"))
+Input_d <- as.matrix(read.table("Inputs/WSI/Input.d.txt", header = T, sep = "\t"))
+
+Y_dsd <- apply(Y_d, 1, sd)
+Y_d <- apply(Y_d, 1, mean)
+Input_d <- apply(Input_d, 1, mean)
+
+Y_ds <- matrix(Y_d, ncol = 3, nrow = 21, byrow = F)
+TPs_d <- matrix(Input_d[1:63], ncol = 3, nrow = 21, byrow = F)
+WSI_d <- matrix(Input_d[64:126], ncol = 3, nrow = 21, byrow = F)
+
+Popmean_D <- NMoptimization(days = TPs, wsis = WSI, ys = Y_ds, int.bm.max.vec = c(150000, 200000, 370000, 500000), int.rate.vec = c(seq(0.0001, 2, by = 0.1)), int.di.vec = c(seq(0.0001, 5, by = 0.25)))
+
+BMmax_D = 193285.6
+Rate_D = 1.055489 
+DI_D = 0.8092395
+
+
+# plot(1:21, Y_d[1:21], pch = 19, cex = 0.5, ylim = c(0, max(Y_d)*1.5))
+# segments(x0 = 1:21, x1 = 1:21, y0 = Y_d[1:21] - Y_dsd[1:21], y1 = Y_d[1:21] + Y_dsd[1:21], col = "black")
+# segments(x0 = 1:21 - 0.1, x1 = 1:21 + 0.1, y0 = Y_d[1:21] - Y_dsd[1:21], y1 = Y_d[1:21] - Y_dsd[1:21], col = "black")
+# segments(x0 = 1:21 - 0.1, x1 = 1:21 + 0.1, y0 = Y_d[1:21] + Y_dsd[1:21], y1 = Y_d[1:21] + Y_dsd[1:21], col = "black")
+# lines(1:21, 
+#       WSIGomp(bm.max = BMmax_D, TIME = TPs[,1], WSI = WSI[,1], rate = Rate_D, DI = DI_D), 
+#       col = "black", lty = 2)
+# 
+# points(1:21 + 0.1, Y_d[22:42], pch = 19, cex = 0.5, ylim = c(0, max(Y_d)*1.5), col = "steelblue")
+# segments(x0 = 1:21 + 0.1, x1 = 1:21 + 0.1, y0 = Y_d[22:42] - Y_dsd[22:42], y1 = Y_d[22:42] + Y_dsd[22:42], col = "steelblue")
+# segments(x0 = 1:21 - 0.1 + 0.1, x1 = 1:21 + 0.1 + 0.1, y0 = Y_d[22:42] - Y_dsd[22:42], y1 = Y_d[22:42] - Y_dsd[22:42], col = "steelblue")
+# segments(x0 = 1:21 - 0.1 + 0.1, x1 = 1:21 + 0.1 + 0.1, y0 = Y_d[22:42] + Y_dsd[22:42], y1 = Y_d[22:42] + Y_dsd[22:42], col = "steelblue")
+# lines(1:21, 
+#       WSIGomp(bm.max = BMmax_D, TIME = TPs[,2], WSI = WSI[,2], rate = Rate_D, DI = DI_D), 
+#       col = "steelblue", lty = 2)
+# 
+# points(1:21 + 0.2, Y_d[43:63], pch = 19, cex = 0.5, ylim = c(0, max(Y_d)*1.5), col = "steelblue1")
+# segments(x0 = 1:21 + 0.2, x1 = 1:21 + 0.2, y0 = Y_d[43:63] - Y_dsd[43:63], y1 = Y_d[43:63] + Y_dsd[43:63], col = "steelblue1")
+# segments(x0 = 1:21 - 0.1 + 0.2, x1 = 1:21 + 0.1 + 0.2, y0 = Y_d[43:63] - Y_dsd[43:63], y1 = Y_d[43:63] - Y_dsd[43:63], col = "steelblue1")
+# segments(x0 = 1:21 - 0.1 + 0.2, x1 = 1:21 + 0.1 + 0.2, y0 = Y_d[43:63] + Y_dsd[43:63], y1 = Y_d[43:63] + Y_dsd[43:63], col = "steelblue1")
+# lines(1:21, 
+#       WSIGomp(bm.max = BMmax_D, TIME = TPs[,3], WSI = WSI[,3], rate = Rate_D, DI = DI_D), 
+#       col = "steelblue1", lty = 2)
+```
+
+Assessing fit for conventional Gompertz model.
+```{r, echo = T, eval = F}
+NMoptimization_gomp <- function(days, wsis, ys, int.bm.max.vec, int.rate.vec, int.tknot.vec){
+  #Indx is the genotype index; loop over columns of Input
+  #Function to calculate biomass from LAI, PSA and LUE. x contains k and LUE
+  Nexp <- ncol(ys)
+  
+  GompFunct <- function(wsi, day, params) {
+    bm.max = params[1]
+    rate = params[2]
+    Tknot = params[3]
+    
+    BM = bm.max * ( exp( -exp(-rate * ((day) - Tknot))))
+    output <- BM
+    output
+    }
+  
+  #Optimization function
+  Gomp.op <- function(x){
+    #all inputs are matrices
+    optim.sum <- 0
+    #For each experiment 
+    for(env in 1:Nexp){
+      optim.sum <- optim.sum + sum(abs(ys[,env] - GompFunct(params = x, wsi = wsis[,env], day = days[,env]) ))
+    }
+    optim.sum
+  }
+  
+  fd <- function(bm.max, rate, Tknot){
+    optim.out <- optim(c(bm.max, rate, Tknot), Gomp.op, method="L-BFGS-B", lower = c(1E-16,1E-16,1E-16), upper = c(1E16,1E16,1E16))
+    instantframe <- data.frame(
+      INT.bm.max = bm.max,
+      INT.rate = rate,
+      INT.Tknot = Tknot,
+      OPT.bm.max = optim.out$par[1],
+      OPT.rate = optim.out$par[2],
+      OPT.Tknot = optim.out$par[3],
+      OPT.value = optim.out$value,
+      OPT.counts = optim.out$counts[1]
+    )
+    instantframe
+  }  
+  
+  output<-data.frame()
+  for(int.bm.max in int.bm.max.vec){
+    for(int.rate in int.rate.vec){
+      for(int.tknot in int.tknot.vec){
+        output <- rbind(output,	fd(bm.max = int.bm.max, rate = int.rate, Tknot = int.tknot))
+        }
+      }
+    }
+  
+  return(output[which(output$OPT.value==min(output$OPT.value)),])
+}
+
+
+####
+####
+# pathPrefix <- "~/Documents/Dropbox/Work/Manuscripts/2019_CGM_GWAS/CGM/"
+# 
+# Y_c <- as.matrix(read.table(paste0(pathPrefix,
+#                                    "Inputs/WSI/Y.c.txt"), header = T, sep = "\t"))
+# Input_c <- as.matrix(read.table(paste0(pathPrefix,
+#                                        "Inputs/WSI/Input.c.txt"), header = T, sep = "\t"))
+
+Y_c <- as.matrix(read.table("Inputs/WSI/Y.c.txt", header = T, sep = "\t"))
+Input_c <- as.matrix(read.table("Inputs/WSI/Input.c.txt", header = T, sep = "\t"))
+Y_csd <- apply(Y_c, 1, sd)
+Y_c <- apply(Y_c, 1, mean)
+Input_c <- apply(Input_c, 1, mean)
+
+Ys_c <- matrix(Y_c, ncol = 3, nrow = 21, byrow = F)
+TPs_c <- matrix(Input_c[1:63], ncol = 3, nrow = 21, byrow = F)
+WSI_c <- matrix(Input_c[64:126], ncol = 3, nrow = 21, byrow = F)
+  
+Popmean_C <- NMoptimization_gomp(days = TPs_c, wsis = WSI_c, ys = Ys_c, 
+                                 int.bm.max.vec = c(150000, 200000, 370000, 500000), 
+                                 int.rate.vec = c(seq(0.0001, 2, by = 0.1)), 
+                                 int.tknot.vec = c(seq(1, 200, by = 10)))
+
+BMmax_C = Popmean_C[4] #920765.4
+Rate_C = Popmean_C[5] #0.08634105
+Tknot_C = Popmean_C[6] #19.23533
+
+# Y_d <- as.matrix(read.table(paste0(pathPrefix, "Inputs/WSI/Y.d.txt"), header = T, sep = "\t"))
+# Input_d <- as.matrix(read.table(paste0(pathPrefix, "Inputs/WSI/Input.d.txt"), header = T, sep = "\t"))
+
+Y_d <- as.matrix(read.table("Inputs/WSI/Y.d.txt", header = T, sep = "\t"))
+Input_d <- as.matrix(read.table("Inputs/WSI/Input.d.txt", header = T, sep = "\t"))
+
+Y_dsd <- apply(Y_d, 1, sd)
+Y_d <- apply(Y_d, 1, mean)
+Input_d <- apply(Input_d, 1, mean)
+
+Y_ds <- matrix(Y_d, ncol = 3, nrow = 21, byrow = F)
+TPs_d <- matrix(Input_d[1:63], ncol = 3, nrow = 21, byrow = F)
+WSI_d <- matrix(Input_d[64:126], ncol = 3, nrow = 21, byrow = F)
+
+Popmean_D <- NMoptimization_gomp(days = TPs_d, wsis = WSI_d, ys = Y_ds, 
+                                 int.bm.max.vec = c(150000, 200000, 370000, 500000), 
+                                 int.rate.vec = c(seq(0.0001, 2, by = 0.1)), 
+                                 int.tknot.vec = c(0.0001,
+                                                   1:20*0.05))
+
+BMmax_D = Popmean_D[4] #179846
+Rate_D = Popmean_D[5] #0.1037559
+Tknot_D = Popmean_D[6] #9.899568
+```
+
+# Fit model to genotype trajectories using Nelder-Mead optimization
+```{r, echo = T, eval = F}
+rm(list = ls())
+
+NMoptimization_gomp <- function(days, wsis, ys, int.bm.max.vec, int.rate.vec, int.tknot.vec){
+  #Indx is the genotype index; loop over columns of Input
+  #Function to calculate biomass from LAI, PSA and LUE. x contains k and LUE
+  Nexp <- ncol(ys)
+  
+  GompFunct <- function(wsi, day, params) {
+    bm.max = params[1]
+    rate = params[2]
+    Tknot = params[3]
+    
+    BM = bm.max * ( exp( -exp(-rate * ((day) - Tknot))))
+    output <- BM
+    output
+    }
+  
+  #Optimization function
+  Gomp.op <- function(x){
+    #all inputs are matrices
+    optim.sum <- 0
+    #For each experiment 
+    for(env in 1:Nexp){
+      optim.sum <- optim.sum + sum(abs(ys[,env] - GompFunct(params = x, wsi = wsis[,env], day = days[,env]) ))
+    }
+    optim.sum
+  }
+  
+  fd <- function(bm.max, rate, Tknot){
+    optim.out <- optim(c(bm.max, rate, Tknot), Gomp.op, method="L-BFGS-B", lower = c(1E-16,1E-16,1E-16), upper = c(1E16,1E16,1E16))
+    instantframe <- data.frame(
+      INT.bm.max = bm.max,
+      INT.rate = rate,
+      INT.Tknot = Tknot,
+      OPT.bm.max = optim.out$par[1],
+      OPT.rate = optim.out$par[2],
+      OPT.Tknot = optim.out$par[3],
+      OPT.value = optim.out$value,
+      OPT.counts = optim.out$counts[1]
+    )
+    instantframe
+  }  
+  
+  output<-data.frame()
+  for(int.bm.max in int.bm.max.vec){
+    for(int.rate in int.rate.vec){
+      for(int.tknot in int.tknot.vec){
+        output <- rbind(output,	fd(bm.max = int.bm.max, rate = int.rate, Tknot = int.tknot))
+        }
+      }
+    }
+  
+  return(output[which(output$OPT.value==min(output$OPT.value)),])
+}
+
+
+####
+####
+# pathPrefix <- "~/Documents/Dropbox/Work/Manuscripts/2019_CGM_GWAS/CGM/"
+# 
+# Y_c <- as.matrix(read.table(paste0(pathPrefix,
+#                                    "Inputs/WSI/Y.c.txt"), header = T, sep = "\t"))
+# Input_c <- as.matrix(read.table(paste0(pathPrefix,
+#                                        "Inputs/WSI/Input.c.txt"), header = T, sep = "\t"))
+Y_c <- as.matrix(read.table("Inputs/WSI/Y.c.txt", header = T, sep = "\t"))
+Input_c <- as.matrix(read.table("Inputs/WSI/Input.c.txt", header = T, sep = "\t"))
+ControlParams <- NULL
+
+for (i in 1:ncol(Input_c)){
+  tmpYc <- matrix(Y_c[,i], ncol = 3, byrow = F)
+  tmpTPs_c <- matrix(Input_c[1:63, i], ncol = 3, byrow = F)
+  tmpWSI_c <- matrix(Input_c[64:126, i], ncol = 3, byrow = F) #Not needed but it will be easier with the WSI gomp model
+  
+  tryCatch({
+    tmp_C <- NMoptimization_gomp(days = tmpTPs_c, wsis = tmpWSI_c, ys = tmpYc, 
+                               int.bm.max.vec = c(150000, 200000, 370000, 500000), 
+                               int.rate.vec = c(seq(0.0001, 2, by = 0.1)), 
+                               int.tknot.vec = c(seq(1, 200, by = 10)))
+  
+    ControlParams <- rbind(ControlParams, 
+                         c(tmp_C[4:6]))
+    
+  }, error = function(e) {ControlParams <- rbind(ControlParams, 
+                                                 c(NA, NA, NA))
+  return(ControlParams)}
+  )
+  
+  cat("finished genotype ", i, "\n")
+}
+
+saveRDS(ControlParams, "NM_Opt/classicalGomp_NM/Control_gomp.rds")
+```
+
+```{r, echo = T, eval = F}
+rm(list = ls())
+
+NMoptimization_gomp <- function(days, wsis, ys, int.bm.max.vec, int.rate.vec, int.tknot.vec){
+  #Indx is the genotype index; loop over columns of Input
+  #Function to calculate biomass from LAI, PSA and LUE. x contains k and LUE
+  Nexp <- ncol(ys)
+  
+  GompFunct <- function(wsi, day, params) {
+    bm.max = params[1]
+    rate = params[2]
+    Tknot = params[3]
+    
+    BM = bm.max * ( exp( -exp(-rate * ((day) - Tknot))))
+    output <- BM
+    output
+    }
+  
+  #Optimization function
+  Gomp.op <- function(x){
+    #all inputs are matrices
+    optim.sum <- 0
+    #For each experiment 
+    for(env in 1:Nexp){
+      optim.sum <- optim.sum + sum(abs(ys[,env] - GompFunct(params = x, wsi = wsis[,env], day = days[,env]) ))
+    }
+    optim.sum
+  }
+  
+  fd <- function(bm.max, rate, Tknot){
+    optim.out <- optim(c(bm.max, rate, Tknot), Gomp.op, method="L-BFGS-B", lower = c(1E-16,1E-16,1E-16), upper = c(1E16,1E16,1E16))
+    instantframe <- data.frame(
+      INT.bm.max = bm.max,
+      INT.rate = rate,
+      INT.Tknot = Tknot,
+      OPT.bm.max = optim.out$par[1],
+      OPT.rate = optim.out$par[2],
+      OPT.Tknot = optim.out$par[3],
+      OPT.value = optim.out$value,
+      OPT.counts = optim.out$counts[1]
+    )
+    instantframe
+  }  
+  
+  output<-data.frame()
+  for(int.bm.max in int.bm.max.vec){
+    for(int.rate in int.rate.vec){
+      for(int.tknot in int.tknot.vec){
+        output <- rbind(output,	fd(bm.max = int.bm.max, rate = int.rate, Tknot = int.tknot))
+        }
+      }
+    }
+  
+  return(output[which(output$OPT.value==min(output$OPT.value)),])
+}
+
+
+####
+####
+# pathPrefix <- "~/Documents/Dropbox/Work/Manuscripts/2019_CGM_GWAS/CGM/"
+
+Y_d <- as.matrix(read.table("Inputs/WSI/Y.d.txt", header = T, sep = "\t"))
+Input_d <- as.matrix(read.table("Inputs/WSI/Input.d.txt", header = T, sep = "\t"))
+DroughtParams <- NULL
+
+for (i in 1:ncol(Input_c)){
+  tmpYd <- matrix(Y_d[,i], ncol = 3, byrow = F)
+  tmpTPs_d <- matrix(Input_d[1:63, i], ncol = 3, byrow = F)
+  tmpWSI_d <- matrix(Input_d[64:126, i], ncol = 3, byrow = F) #Not needed but it will be easier with the WSI gomp model
+  tryCatch({
+    tmp_D <- NMoptimization_gomp(days = tmpTPs_d, wsis = tmpWSI_d, ys = tmpYd, 
+                               int.bm.max.vec = c(150000, 200000, 370000, 500000), 
+                               int.rate.vec = c(seq(0.0001, 2, by = 0.1)), 
+                               int.tknot.vec = c(seq(1, 200, by = 10)))
+  
+    DroughtParams <- rbind(DroughtParams,
+                           c(tmp_D[4:6]))
+    
+  }, error = function(e) {DroughtParams <- rbind(DroughtParams,
+                           c(NA, NA, NA))
+  return(DroughtParams)}
+  )
+  
+  cat("finished genotype ", i, "\n")
+}
+
+saveRDS(DroughtParams, "NM_Opt/classicalGomp_NM/Drought_gomp.rds")
+```
+
+
+For the WSI-Gomp model.
+```{r, echo = T, eval = F}
+rm(list = ls())
+
+NMoptimization <- function(days, wsis, ys, int.bm.max.vec, int.rate.vec, int.di.vec){
+  #Indx is the genotype index; loop over columns of Input
+  #Function to calculate biomass from LAI, PSA and LUE. x contains k and LUE
+  Nexp <- ncol(ys)
+  
+  GompFunct <- function(wsi, day, params) {
+    bm.max = params[1]
+    rate = params[2]
+    DI = params[3]
+    
+    BM = bm.max * ( exp( -exp(-rate * ((day*0.05) - wsi^DI))))
+    output <- BM
+    output
+    }
+  
+  #Optimization function
+  Gomp.op <- function(x){
+    #all inputs are matrices
+    optim.sum <- 0
+    #For each experiment 
+    for(env in 1:Nexp){
+      optim.sum <- optim.sum + sum(abs(ys[,env] - GompFunct(params = x, wsi = wsis[,env], day = days[,env]) ))
+    }
+    optim.sum
+  }
+  
+  fd <- function(bm.max, rate, DI){
+    optim.out <- optim(c(bm.max, rate, DI), Gomp.op, method="L-BFGS-B", lower = c(1E-16,1E-16,1E-16), upper = c(1E16,1E16,1E16))
+    instantframe <- data.frame(
+      INT.bm.max = bm.max,
+      INT.rate = rate,
+      INT.DI = DI,
+      OPT.bm.max = optim.out$par[1],
+      OPT.rate = optim.out$par[2],
+      OPT.DI = optim.out$par[3],
+      OPT.value = optim.out$value,
+      OPT.counts = optim.out$counts[1]
+    )
+    instantframe
+  }  
+  
+  output<-data.frame()
+  for(int.bm.max in int.bm.max.vec){
+    for(int.rate in int.rate.vec){
+      for(int.di in int.di.vec){
+        output <- rbind(output,	fd(bm.max = int.bm.max, rate = int.rate, DI = int.di))
+        }
+      }
+    }
+  
+  return(output[which(output$OPT.value==min(output$OPT.value)),])
+}
+
+
+####
+####
+Y_c <- read.table("Inputs/WSI/Y.c.txt", header = T, sep = "\t")
+Input_c <- read.table("Inputs/WSI/Input.c.txt", header = T, sep = "\t")
+ControlParams <- NULL
+
+for (i in 1:ncol(Input_c)){
+  tmpYc <- matrix(Y_c[,i], ncol = 3, byrow = F)
+  tmpTPs_c <- matrix(Input_c[1:63, i], ncol = 3, byrow = F)
+  tmpWSI_c <- matrix(Input_c[64:126, i], ncol = 3, byrow = F) #Not needed but it will be easier with the WSI gomp model
+  
+  tryCatch({
+    tmp_C <- NMoptimization(days = tmpTPs_c, wsis = tmpWSI_c, ys = tmpYc, 
+                             int.bm.max.vec = c(150000, 200000, 370000, 500000), 
+                             int.rate.vec = c(seq(0.0001, 2, by = 0.1)), 
+                             int.di.vec = c(seq(0.0001, 5, by = 0.25)))
+  
+    ControlParams <- rbind(ControlParams, 
+                         c(i, tmp_C[4:6]))
+    }, error = function(e) {ControlParams <- rbind(ControlParams, 
+                                                 c(i, NA, NA, NA))
+    return(ControlParams)}
+  )
+  
+  cat("finished genotype ", i, "\n")
+}
+
+saveRDS(ControlParams, "NM_Opt/WSIGomp_NM/Control_gompWSI.rds")
+```
+
+```{r, echo = T, eval = F}
+rm(list = ls())
+
+NMoptimization <- function(days, wsis, ys, int.bm.max.vec, int.rate.vec, int.di.vec){
+  #Indx is the genotype index; loop over columns of Input
+  #Function to calculate biomass from LAI, PSA and LUE. x contains k and LUE
+  Nexp <- ncol(ys)
+  
+  GompFunct <- function(wsi, day, params) {
+    bm.max = params[1]
+    rate = params[2]
+    DI = params[3]
+    
+    BM = bm.max * ( exp( -exp(-rate * ((day*0.05) - wsi^DI))))
+    output <- BM
+    output
+    }
+  
+  #Optimization function
+  Gomp.op <- function(x){
+    #all inputs are matrices
+    optim.sum <- 0
+    #For each experiment 
+    for(env in 1:Nexp){
+      optim.sum <- optim.sum + sum(abs(ys[,env] - GompFunct(params = x, wsi = wsis[,env], day = days[,env]) ))
+    }
+    optim.sum
+  }
+  
+  fd <- function(bm.max, rate, DI){
+    optim.out <- optim(c(bm.max, rate, DI), Gomp.op, method="L-BFGS-B", lower = c(1E-16,1E-16,1E-16), upper = c(1E16,1E16,1E16))
+    instantframe <- data.frame(
+      INT.bm.max = bm.max,
+      INT.rate = rate,
+      INT.DI = DI,
+      OPT.bm.max = optim.out$par[1],
+      OPT.rate = optim.out$par[2],
+      OPT.DI = optim.out$par[3],
+      OPT.value = optim.out$value,
+      OPT.counts = optim.out$counts[1]
+    )
+    instantframe
+  }  
+  
+  output<-data.frame()
+  for(int.bm.max in int.bm.max.vec){
+    for(int.rate in int.rate.vec){
+      for(int.di in int.di.vec){
+        output <- rbind(output,	fd(bm.max = int.bm.max, rate = int.rate, DI = int.di))
+        }
+      }
+    }
+  
+  return(output[which(output$OPT.value==min(output$OPT.value)),])
+}
+
+
+####
+####
+Y_d <- read.table(paste0(pathPrefix, "Inputs/WSI/Y.d.txt"), header = T, sep = "\t")
+Input_d <- read.table(paste0(pathPrefix, "Inputs/WSI/Input.d.txt"), header = T, sep = "\t")
+
+DroughtParams <- NULL
+
+for (i in 1:ncol(Input_c)){
+  tmpYd <- matrix(Y_d[,i], ncol = 3, byrow = F)
+  tmpTPs_d <- matrix(Input_d[1:63, i], ncol = 3, byrow = F)
+  tmpWSI_d <- matrix(Input_d[64:126, i], ncol = 3, byrow = F) #Not needed but it will be easier with the WSI gomp model
+  tryCatch({
+    tmp_D <- NMoptimization(days = tmpTPs_d, wsis = tmpWSI_d, ys = tmpYd, 
+                            int.bm.max.vec = c(150000, 200000, 370000, 500000), 
+                            int.rate.vec = c(seq(0.0001, 2, by = 0.1)), 
+                            int.di.vec = c(seq(0.0001, 5, by = 0.25)))
+  
+    DroughtParams <- rbind(DroughtParams,
+                           c(tmp_D[4:6]))
+    }, warning = function(w) {
+    DroughtParams <- rbind(DroughtParams,
+                           c(NA, NA, NA))
+    return(DroughtParams)
+    }, error = function(e) {
+    DroughtParams <- rbind(DroughtParams,
+                           c(NA, NA, NA))
+    return(DroughtParams)}
+  )
+  
+  cat("finished genotype ", i, "\n")
+}
+
+saveRDS(DroughtParams, "NM_Opt/WSIGomp_NM/Drought_gompWSI.rds")
+```
